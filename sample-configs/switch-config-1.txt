@@ -1,0 +1,42 @@
+! Switch Configuration Example
+! Basic Layer 2 switch configuration
+
+version 15.2
+!
+hostname CampusSwitch
+!
+! Weak password detected
+enable password admin
+!
+!
+interface Vlan1
+ description Management VLAN
+ ip address 192.168.1.2 255.255.255.0
+ no shutdown
+!
+interface GigabitEthernet1/0/1
+ description Server Port
+ switchport mode access
+ switchport access vlan 10
+ no shutdown
+!
+interface GigabitEthernet1/0/2
+ description Workstation Port
+ switchport mode access
+ switchport access vlan 20
+ no shutdown
+!
+interface GigabitEthernet1/0/3
+ description Unused Port
+ shutdown
+!
+! VTY with weak configuration
+line vty 0 4
+ password 12345
+ transport input all
+ login
+!
+! No logging
+! No banner
+!
+end

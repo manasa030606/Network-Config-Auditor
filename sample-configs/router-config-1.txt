@@ -1,0 +1,46 @@
+! Router Configuration with Multiple Vulnerabilities
+! For testing the Network Configuration Auditor
+
+version 15.1
+!
+hostname VulnerableRouter
+!
+! Weak enable password (should use enable secret)
+enable password cisco
+!
+! No password encryption enabled
+!
+!
+interface GigabitEthernet0/0
+ description WAN Interface
+ ip address 203.0.113.1 255.255.255.0
+ no shutdown
+!
+interface GigabitEthernet0/1
+ description LAN Interface
+ ip address 192.168.1.1 255.255.255.0
+ no shutdown
+!
+interface GigabitEthernet0/2
+ description Unused Interface
+ shutdown
+!
+interface GigabitEthernet0/3
+ description Another Unused Interface
+ shutdown
+!
+! VTY lines with critical vulnerabilities
+line vty 0 4
+ password cisco
+ transport input telnet
+ login
+!
+! No access-class configured on VTY
+! No logging configured
+! No SSH configured
+!
+ip http server
+!
+! No banner configured
+!
+end

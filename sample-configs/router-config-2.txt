@@ -1,0 +1,50 @@
+! Router Configuration with Moderate Security
+! Some security measures in place but room for improvement
+
+version 15.4
+!
+hostname SecureRouter
+!
+! Using enable secret (encrypted)
+enable secret 5 $1$mERr$hx5rVt7rPNoS4wqbXKX7m0
+!
+! Password encryption enabled
+service password-encryption
+!
+!
+interface GigabitEthernet0/0
+ description WAN Interface
+ ip address 203.0.113.10 255.255.255.252
+ no shutdown
+!
+interface GigabitEthernet0/1
+ description LAN Interface
+ ip address 192.168.10.1 255.255.255.0
+ no shutdown
+!
+! Access list defined
+access-list 10 permit 192.168.10.0 0.0.0.255
+!
+! VTY configuration with SSH
+line vty 0 4
+ password 7 094F471A1A0A
+ transport input ssh
+ login local
+!
+! SSH configured
+crypto key generate rsa modulus 2048
+ip ssh version 2
+!
+! Logging enabled
+logging buffered 51200
+logging console warnings
+!
+! Banner configured
+banner login ^C
+Authorized access only. Disconnect immediately if you are not authorized.
+^C
+!
+! HTTP server disabled
+no ip http server
+!
+end
