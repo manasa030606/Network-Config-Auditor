@@ -1,6 +1,5 @@
 # 🔒 Secure Network Configuration Auditor
-
-**Computer Networks Project - Milestone 2**  
+ 
 **Authors**: Kalash Kumari Thakur (230136), Manasa Chinnam (230078)  
 **Institution**: Newton School of Technology 
 
@@ -719,3 +718,4 @@ This project is created for educational purposes as part of a Computer Networks 
 - 🎨 [Frontend README](frontend/README.md)
 
 ---
+
