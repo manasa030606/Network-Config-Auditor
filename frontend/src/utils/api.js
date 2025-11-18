@@ -1,88 +1,114 @@
 /**
- * API utility functions for communicating with backend
+ * API utility functions - Simple network scanning
  */
-
 import axios from 'axios';
 
-// Base URL for API (backend server)
 const API_BASE_URL = process.env.REACT_APP_API_URL || 'http://localhost:5003';
 
 /**
- * Analyze a configuration file
- * @param {File} file - Configuration file to analyze
- * @returns {Promise} API response with analysis results
+ * Scan current network and analyze router
  */
-export const analyzeConfigFile = async (file) => {
+export const scanNetwork = async () => {
   try {
-    // Create FormData to send file
-    const formData = new FormData();
-    formData.append('configFile', file);
-
-    // Make POST request to /api/analyze endpoint
     const response = await axios.post(
-      `${API_BASE_URL}/api/analyze`,
-      formData,
+      `${API_BASE_URL}/api/scan/network`,
+      {},
       {
         headers: {
-          'Content-Type': 'multipart/form-data',
+          'Content-Type': 'application/json',
         },
+        timeout: 60000, // 60 seconds
       }
     );
-
     return response.data;
   } catch (error) {
-    // Handle errors
     if (error.response) {
-      // Server responded with error status
-      throw new Error(error.response.data.error || 'Analysis failed');
+      throw new Error(error.response.data.error || 'Network scan failed');
     } else if (error.request) {
-      // Request was made but no response received
       throw new Error('Unable to connect to server. Make sure backend is running on port 5003.');
     } else {
-      // Something else went wrong
-      throw new Error('Error analyzing file: ' + error.message);
+      throw new Error('Error scanning network: ' + error.message);
     }
   }
 };
 
 /**
- * Analyze configuration text directly
- * @param {string} configText - Configuration text to analyze
- * @returns {Promise} API response with analysis results
+ * Get current network info
  */
-export const analyzeConfigText = async (configText) => {
+export const getNetworkInfo = async () => {
   try {
-    const response = await axios.post(
-      `${API_BASE_URL}/api/analyze-text`,
-      { configText },
-      {
-        headers: {
-          'Content-Type': 'application/json',
-        },
-      }
-    );
-
+    const response = await axios.get(`${API_BASE_URL}/api/scan/info`, {
+      timeout: 5000
+    });
     return response.data;
   } catch (error) {
     if (error.response) {
-      throw new Error(error.response.data.error || 'Analysis failed');
+      throw new Error(error.response.data.error || 'Failed to get network info');
     } else if (error.request) {
-      throw new Error('Unable to connect to server. Make sure backend is running.');
+      throw new Error('Backend server not reachable');
     } else {
-      throw new Error('Error analyzing text: ' + error.message);
+      throw new Error('Error: ' + error.message);
     }
   }
 };
 
 /**
  * Check if backend server is running
- * @returns {Promise<boolean>} True if server is reachable
  */
 export const checkServerHealth = async () => {
   try {
-    const response = await axios.get(`${API_BASE_URL}/`);
+    const response = await axios.get(`${API_BASE_URL}/`, {
+      timeout: 5000
+    });
     return response.data.status === 'running';
   } catch (error) {
     return false;
+  }
+};
+
+/**
+ * Scan for available WiFi networks
+ */
+export const scanWiFiNetworks = async () => {
+  try {
+    const response = await axios.get(`${API_BASE_URL}/api/network/scan`, {
+      timeout: 30000
+    });
+    return response.data;
+  } catch (error) {
+    if (error.response) {
+      throw new Error(error.response.data.error || 'Failed to scan WiFi networks');
+    } else if (error.request) {
+      throw new Error('Unable to connect to server. Make sure backend is running.');
+    } else {
+      throw new Error('Error scanning WiFi: ' + error.message);
+    }
+  }
+};
+
+/**
+ * Connect to WiFi network and analyze router configuration
+ */
+export const analyzeNetwork = async (ssid, password) => {
+  try {
+    const response = await axios.post(
+      `${API_BASE_URL}/api/network/analyze`,
+      { ssid, password },
+      {
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        timeout: 120000, // 2 minutes for full analysis
+      }
+    );
+    return response.data;
+  } catch (error) {
+    if (error.response) {
+      throw new Error(error.response.data.error || 'Network analysis failed');
+    } else if (error.request) {
+      throw new Error('Unable to connect to server. Make sure backend is running.');
+    } else {
+      throw new Error('Error analyzing network: ' + error.message);
+    }
   }
 };

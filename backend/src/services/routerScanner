@@ -1,0 +1,470 @@
+/**
+ * Router Scanner - FULLY DYNAMIC VERSION
+ * Detects actual WiFi name and real gateway IP
+ */
+const os = require('os');
+const { exec } = require('child_process');
+const { promisify } = require('util');
+const execPromise = promisify(exec);
+const { NodeSSH } = require('node-ssh');
+
+class RouterScanner {
+  constructor() {
+    this.ssh = new NodeSSH();
+  }
+
+  /**
+   * Get REAL gateway IP from routing table
+   */
+  async getGatewayIP() {
+    try {
+      let gateway = null;
+
+      if (process.platform === 'win32') {
+        // Windows - use ipconfig
+        const { stdout } = await execPromise('ipconfig', { timeout: 5000 });
+        const lines = stdout.split('\n');
+        
+        for (let i = 0; i < lines.length; i++) {
+          if (lines[i].includes('Default Gateway') && lines[i].includes(':')) {
+            const match = lines[i].match(/:\s*(\d+\.\d+\.\d+\.\d+)/);
+            if (match && match[1] !== '0.0.0.0') {
+              gateway = match[1];
+              break;
+            }
+          }
+        }
+      } else if (process.platform === 'darwin') {
+        // macOS
+        try {
+          const { stdout } = await execPromise('route -n get default', { timeout: 5000 });
+          const match = stdout.match(/gateway:\s*(\d+\.\d+\.\d+\.\d+)/);
+          if (match) gateway = match[1];
+        } catch (e) {
+          // Fallback for macOS
+          const { stdout } = await execPromise('netstat -nr | grep default', { timeout: 5000 });
+          const match = stdout.match(/default\s+(\d+\.\d+\.\d+\.\d+)/);
+          if (match) gateway = match[1];
+        }
+      } else {
+        // Linux
+        try {
+          const { stdout } = await execPromise('ip route | grep default', { timeout: 5000 });
+          const match = stdout.match(/default via (\d+\.\d+\.\d+\.\d+)/);
+          if (match) gateway = match[1];
+        } catch (e) {
+          // Fallback for older Linux
+          const { stdout } = await execPromise('route -n | grep "^0.0.0.0"', { timeout: 5000 });
+          const parts = stdout.trim().split(/\s+/);
+          if (parts.length > 1) gateway = parts[1];
+        }
+      }
+
+      // If still no gateway, try to get from network interfaces
+      if (!gateway) {
+        const interfaces = os.networkInterfaces();
+        for (const [name, details] of Object.entries(interfaces)) {
+          for (const detail of details) {
+            if (detail.family === 'IPv4' && !detail.internal) {
+              // Guess gateway by replacing last octet with 1
+              const parts = detail.address.split('.');
+              parts[3] = '1';
+              gateway = parts.join('.');
+              break;
+            }
+          }
+          if (gateway) break;
+        }
+      }
+
+      if (!gateway) {
+        throw new Error('Could not detect gateway IP');
+      }
+
+      console.log(`🌐 Real Gateway detected: ${gateway}`);
+      return gateway;
+    } catch (error) {
+      console.error('Error getting gateway:', error.message);
+      throw new Error(`Failed to get gateway: ${error.message}`);
+    }
+  }
+
+  /**
+   * Get REAL WiFi SSID (network name)
+   */
+  async getWiFiSSID() {
+    try {
+      let ssid = null;
+
+      if (process.platform === 'win32') {
+        // Windows - get current WiFi SSID
+        try {
+          const { stdout } = await execPromise('netsh wlan show interfaces', { timeout: 5000 });
+          
+          // Look for SSID line
+          const lines = stdout.split('\n');
+          for (const line of lines) {
+            if (line.trim().startsWith('SSID') && !line.includes('BSSID')) {
+              const match = line.match(/SSID\s*:\s*(.+)/i);
+              if (match) {
+                ssid = match[1].trim();
+                break;
+              }
+            }
+          }
+
+          // If no SSID found, might be Ethernet
+          if (!ssid || ssid.length === 0) {
+            // Check if connected via Ethernet
+            const { stdout: ethernetCheck } = await execPromise('netsh interface show interface', { timeout: 3000 });
+            if (ethernetCheck.includes('Ethernet') && ethernetCheck.includes('Connected')) {
+              ssid = 'Ethernet Connection';
+            }
+          }
+        } catch (e) {
+          console.log('⚠️  WiFi command failed, trying alternative...');
+        }
+      } else if (process.platform === 'darwin') {
+        // macOS - get WiFi SSID
+        try {
+          const { stdout } = await execPromise('/System/Library/PrivateFrameworks/Apple80211.framework/Versions/Current/Resources/airport -I', { timeout: 5000 });
+          const match = stdout.match(/\sSSID:\s*(.+)/);
+          if (match) {
+            ssid = match[1].trim();
+          }
+        } catch (e) {
+          // Fallback for macOS
+          try {
+            const { stdout } = await execPromise('networksetup -getairportnetwork en0', { timeout: 3000 });
+            const match = stdout.match(/Current Wi-Fi Network:\s*(.+)/);
+            if (match) {
+              ssid = match[1].trim();
+            }
+          } catch (err) {
+            console.log('⚠️  WiFi detection failed');
+          }
+        }
+      } else {
+        // Linux - get WiFi SSID
+        try {
+          const { stdout } = await execPromise('iwgetid -r', { timeout: 5000 });
+          ssid = stdout.trim();
+        } catch (e) {
+          // Alternative for Linux
+          try {
+            const { stdout } = await execPromise('nmcli -t -f active,ssid dev wifi | grep "^yes"', { timeout: 3000 });
+            const match = stdout.match(/yes:(.+)/);
+            if (match) {
+              ssid = match[1].trim();
+            }
+          } catch (err) {
+            console.log('⚠️  WiFi detection failed');
+          }
+        }
+      }
+
+      // Final fallback - check interface names for clues
+      if (!ssid || ssid.length < 2) {
+        const interfaces = os.networkInterfaces();
+        const interfaceNames = Object.keys(interfaces);
+        
+        // Check if WiFi or Ethernet
+        if (interfaceNames.some(name => name.includes('wlan') || name.includes('Wi-Fi') || name.includes('en0'))) {
+          ssid = 'WiFi Network';
+        } else if (interfaceNames.some(name => name.includes('eth') || name.includes('Ethernet'))) {
+          ssid = 'Ethernet Network';
+        } else {
+          ssid = 'Local Network';
+        }
+      }
+
+      console.log(`📡 Network Name: ${ssid}`);
+      return ssid;
+    } catch (error) {
+      console.error('Error getting SSID:', error.message);
+      return 'Network Connection';
+    }
+  }
+
+  /**
+   * Get local IP address
+   */
+  getLocalIP() {
+    const interfaces = os.networkInterfaces();
+    
+    for (const [name, details] of Object.entries(interfaces)) {
+      for (const detail of details) {
+        if (detail.family === 'IPv4' && !detail.internal) {
+          console.log(`💻 Local IP: ${detail.address}`);
+          return detail.address;
+        }
+      }
+    }
+    
+    return '0.0.0.0';
+  }
+
+  /**
+   * Try to connect to router via SSH
+   */
+  async trySSHConnection(gateway) {
+    const credentials = [
+      { user: 'admin', pass: 'admin' },
+      { user: 'admin', pass: 'password' },
+      { user: 'admin', pass: '' },
+      { user: 'root', pass: 'admin' },
+      { user: 'root', pass: 'root' },
+      { user: 'root', pass: '' },
+      { user: 'cisco', pass: 'cisco' },
+      { user: 'user', pass: 'user' }
+    ];
+
+    console.log(`🔑 Attempting SSH connection to ${gateway}...`);
+
+    for (const cred of credentials) {
+      try {
+        console.log(`   Trying ${cred.user}:${cred.pass || '(empty)'}...`);
+        
+        await this.ssh.connect({
+          host: gateway,
+          username: cred.user,
+          password: cred.pass,
+          port: 22,
+          readyTimeout: 8000,
+          algorithms: {
+            kex: [
+              'diffie-hellman-group14-sha1',
+              'diffie-hellman-group1-sha1',
+              'ecdh-sha2-nistp256',
+              'ecdh-sha2-nistp384',
+              'ecdh-sha2-nistp521'
+            ],
+            cipher: [
+              'aes128-cbc',
+              '3des-cbc',
+              'aes128-ctr',
+              'aes192-ctr',
+              'aes256-ctr'
+            ]
+          }
+        });
+
+        console.log(`   ✅ SSH connected with ${cred.user}`);
+
+        // Try to get config
+        const commands = [
+          'show running-config',
+          'show configuration',
+          'cat /etc/config/network && cat /etc/config/firewall',
+          'uci show'
+        ];
+
+        let config = '';
+        for (const cmd of commands) {
+          try {
+            const result = await this.ssh.execCommand(cmd, { timeout: 10000 });
+            if (result.stdout && result.stdout.length > 100) {
+              config += result.stdout + '\n';
+              console.log(`   ✅ Got config from: ${cmd.split(' ')[0]}`);
+            }
+          } catch (e) {
+            // Command not supported, try next
+          }
+        }
+
+        this.ssh.dispose();
+
+        if (config.length > 100) {
+          return {
+            success: true,
+            config: config,
+            username: cred.user
+          };
+        }
+      } catch (error) {
+        // Connection failed, try next credential
+        if (this.ssh.isConnected()) {
+          this.ssh.dispose();
+        }
+      }
+    }
+
+    return null; // SSH failed
+  }
+
+  /**
+   * Generate realistic demo configuration
+   */
+  generateDemoConfig(ssid, gateway, localIP) {
+    const timestamp = new Date().toLocaleString();
+    
+    return `! Router Configuration Analysis
+! Network: ${ssid}
+! Gateway: ${gateway}
+! Your IP: ${localIP}
+! Scan Time: ${timestamp}
+!
+! NOTE: SSH connection to router failed
+! Using demo configuration for security analysis
+! To get real router config, enable SSH on your router
+!
+version 15.1
+service timestamps debug datetime msec
+service timestamps log datetime msec
+no service password-encryption
+!
+hostname ${ssid.replace(/[^a-zA-Z0-9]/g, '')}Router
+!
+boot-start-marker
+boot-end-marker
+!
+! SECURITY ISSUE: Weak enable password
+enable password cisco
+!
+no aaa new-model
+!
+!
+ip cef
+no ipv6 cef
+!
+multilink bundle-name authenticated
+!
+!
+interface GigabitEthernet0/0
+ description WAN Interface - Connected to ISP
+ ip address ${gateway} 255.255.255.0
+ ip nat outside
+ ip virtual-reassembly in
+ duplex auto
+ speed auto
+ no shutdown
+!
+interface GigabitEthernet0/1
+ description LAN Interface - ${ssid}
+ ip address ${localIP} 255.255.255.0
+ ip nat inside
+ ip virtual-reassembly in
+ duplex auto
+ speed auto
+ no shutdown
+!
+interface GigabitEthernet0/2
+ description Unused Interface
+ no ip address
+ shutdown
+ duplex auto
+ speed auto
+!
+interface GigabitEthernet0/3
+ no ip address
+ shutdown
+ duplex auto
+ speed auto
+!
+! SECURITY ISSUE: VTY Lines allow Telnet
+line vty 0 4
+ password admin
+ transport input telnet ssh
+ login
+!
+! SECURITY ISSUE: No access control on VTY
+! No access-class configured
+!
+! SECURITY ISSUE: HTTP Server enabled (insecure)
+ip http server
+ip http authentication local
+!
+! Missing security configurations:
+! - No SSH keys generated
+! - No service password-encryption
+! - No logging configured
+! - No banner configured
+!
+! NAT Configuration
+ip nat inside source list 1 interface GigabitEthernet0/0 overload
+!
+! Access List - Basic only
+access-list 1 permit ${localIP.substring(0, localIP.lastIndexOf('.'))}.0 0.0.0.255
+!
+! Route
+ip route 0.0.0.0 0.0.0.0 ${gateway}
+!
+control-plane
+!
+!
+line con 0
+line aux 0
+line vty 0 4
+ password cisco
+ login
+ transport input telnet
+!
+!
+end`;
+  }
+
+  /**
+   * Main scan function - FULLY DYNAMIC
+   */
+  async scanCurrentNetwork() {
+    try {
+      console.log('\n🔍 Starting DYNAMIC network scan...');
+      console.log('='.repeat(50));
+
+      // Get REAL network info
+      const gateway = await this.getGatewayIP();
+      const ssid = await this.getWiFiSSID();
+      const localIP = this.getLocalIP();
+
+      console.log(`\n✅ Your Network Detected:`);
+      console.log(`   📡 Name: ${ssid}`);
+      console.log(`   🌐 Gateway: ${gateway}`);
+      console.log(`   💻 Your IP: ${localIP}`);
+
+      // Try to get REAL router config via SSH
+      console.log(`\n🔐 Attempting to fetch real router configuration...`);
+      const sshResult = await this.trySSHConnection(gateway);
+
+      if (sshResult && sshResult.success) {
+        console.log(`✅ SUCCESS! Retrieved real router configuration`);
+        console.log(`   Config size: ${sshResult.config.length} bytes`);
+        console.log('='.repeat(50) + '\n');
+
+        return {
+          success: true,
+          ssid: ssid,
+          gateway: gateway,
+          localIP: localIP,
+          config: sshResult.config,
+          username: sshResult.username,
+          isDemo: false,
+          message: 'Real router configuration retrieved via SSH'
+        };
+      } else {
+        console.log(`⚠️  SSH connection failed - router is protected`);
+        console.log(`📝 Generating demo configuration for analysis...`);
+        
+        const demoConfig = this.generateDemoConfig(ssid, gateway, localIP);
+        
+        console.log(`✅ Demo configuration ready (${demoConfig.length} bytes)`);
+        console.log('='.repeat(50) + '\n');
+
+        return {
+          success: true,
+          ssid: ssid,
+          gateway: gateway,
+          localIP: localIP,
+          config: demoConfig,
+          username: 'demo',
+          isDemo: true,
+          message: 'Router SSH not accessible. Using demo configuration. To get real analysis, enable SSH on your router.'
+        };
+      }
+    } catch (error) {
+      console.error('❌ Scan error:', error.message);
+      throw error;
+    }
+  }
+}
+
+module.exports = RouterScanner;
