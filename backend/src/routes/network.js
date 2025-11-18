@@ -145,28 +145,27 @@ router.post('/analyze', async (req, res) => {
       const gateway = await routerDetector.getGatewayIP();
       const services = await routerDetector.detectRouterType(gateway);
       
-      // Create a basic config for analysis
+      // Create a basic config for analysis (without hardcoded passwords)
       const fallbackConfig = `! Router Configuration (Fallback Mode)
 ! Gateway IP: ${gateway}
 ! Detected Services: ${services.map(s => s.type).join(', ') || 'None'}
-! Note: Could not access router directly. Showing general security analysis.
+! Note: Could not access router directly. Showing general security recommendations.
 
 ! Network Configuration
 interface GigabitEthernet0/0
  ip address ${gateway} 255.255.255.0
  no shutdown
 
-! Security Settings
-line vty 0 4
- password admin
- transport input telnet
- no access-class
+! Security Recommendations (General Best Practices)
+! - Use strong passwords (12+ characters)
+! - Enable SSH instead of Telnet
+! - Use HTTPS instead of HTTP
+! - Configure access control lists (ACLs)
+! - Enable firewall rules
+! - Disable unused services
 
-! Services
-ip http server
-
-! This is a fallback configuration for demonstration purposes.
-! Enable SSH on your router for full analysis.`;
+! This is a fallback configuration showing general security recommendations.
+! Enable SSH on your router for full analysis of actual configuration.`;
 
       routerResult = {
         success: true,
@@ -189,10 +188,15 @@ ip http server
       console.log(`✅ Configuration fetched (${routerResult.config.length} bytes)`);
     }
 
-    // Step 3: Analyze configuration
+    // Step 3: Analyze configuration (include password analysis)
     console.log('\n🔍 Step 3: Analyzing configuration...');
-    const analysis = analyzeConfiguration(routerResult.config);
+    const analysis = analyzeConfiguration(routerResult.config, password);
     console.log(`✅ Analysis complete: ${analysis.totalIssues} issues found`);
+    
+    // Log password analysis if available
+    if (analysis.passwordAnalysis) {
+      console.log(`🔐 Password strength: ${analysis.passwordAnalysis.strength} (Score: ${analysis.passwordAnalysis.score}/100)`);
+    }
 
     const totalTime = Date.now() - startTime;
     console.log(`\n⏱️  Total time: ${totalTime}ms`);

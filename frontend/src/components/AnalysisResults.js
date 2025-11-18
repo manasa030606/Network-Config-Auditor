@@ -12,8 +12,9 @@ function AnalysisResults({ analysis }) {
     return null;
   }
 
-  const { analysis: data, filename, analysisTime } = analysis;
+  const { analysis: data, filename, analysisTime, network } = analysis;
   const { totalIssues, critical, high, medium, low, securityScore, issues, recommendations, configSummary } = data;
+  const isFallback = network?.isFallback || false;
 
   /**
    * Get color class based on severity
@@ -59,6 +60,31 @@ function AnalysisResults({ analysis }) {
 
   return (
     <div className="space-y-6">
+      {/* Fallback Mode Warning */}
+      {isFallback && (
+        <div className="bg-yellow-50 border-2 border-yellow-300 rounded-lg p-4">
+          <div className="flex items-start">
+            <div className="flex-shrink-0">
+              <svg className="h-5 w-5 text-yellow-400" fill="currentColor" viewBox="0 0 20 20">
+                <path fillRule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
+              </svg>
+            </div>
+            <div className="ml-3">
+              <h3 className="text-sm font-medium text-yellow-800">Fallback Analysis Mode</h3>
+              <div className="mt-2 text-sm text-yellow-700">
+                <p>⚠️ <strong>Router direct access unavailable.</strong> This analysis shows general security recommendations based on detected router information.</p>
+                <p className="mt-2">To get actual router configuration analysis:</p>
+                <ul className="list-disc list-inside mt-1 space-y-1">
+                  <li>Enable SSH on your router (check router admin panel)</li>
+                  <li>Ensure router web interface is accessible</li>
+                  <li>Use router admin credentials (not WiFi password)</li>
+                </ul>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* File Info Card */}
       <div className="bg-white rounded-lg shadow-md p-6">
         <h3 className="text-lg font-semibold text-gray-900 mb-3">Analysis Summary</h3>
@@ -85,6 +111,45 @@ function AnalysisResults({ analysis }) {
             </p>
           </div>
         </div>
+
+        {/* Password Strength Analysis */}
+        {data.passwordAnalysis && (
+          <div className={`mt-4 p-4 rounded-lg border-2 ${
+            data.passwordAnalysis.strength === 'CRITICAL' ? 'bg-red-50 border-red-300' :
+            data.passwordAnalysis.strength === 'WEAK' ? 'bg-orange-50 border-orange-300' :
+            data.passwordAnalysis.strength === 'MODERATE' ? 'bg-yellow-50 border-yellow-300' :
+            'bg-green-50 border-green-300'
+          }`}>
+            <div className="flex items-center justify-between">
+              <div>
+                <h4 className="font-semibold text-gray-900 mb-1">
+                  🔐 Password Strength Analysis
+                </h4>
+                <p className="text-sm text-gray-700">
+                  Strength: <strong>{data.passwordAnalysis.strength}</strong> | 
+                  Score: <strong>{data.passwordAnalysis.score}/100</strong>
+                </p>
+              </div>
+              <div className={`px-3 py-1 rounded-full text-sm font-medium ${
+                data.passwordAnalysis.strength === 'CRITICAL' ? 'bg-red-200 text-red-800' :
+                data.passwordAnalysis.strength === 'WEAK' ? 'bg-orange-200 text-orange-800' :
+                data.passwordAnalysis.strength === 'MODERATE' ? 'bg-yellow-200 text-yellow-800' :
+                'bg-green-200 text-green-800'
+              }`}>
+                {data.passwordAnalysis.strength}
+              </div>
+            </div>
+            {data.passwordAnalysis.issues && data.passwordAnalysis.issues.length > 0 && (
+              <div className="mt-3 space-y-1">
+                {data.passwordAnalysis.issues.map((issue, idx) => (
+                  <p key={idx} className="text-xs text-gray-600">
+                    ⚠️ {issue.title}
+                  </p>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
       </div>
 
       {/* Security Score Visualization */}

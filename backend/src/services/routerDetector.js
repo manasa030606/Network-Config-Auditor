@@ -23,9 +23,15 @@ class RouterDetector {
     this.commonCredentials = [
       { username: 'admin', password: 'admin' },
       { username: 'admin', password: 'password' },
+      { username: 'admin', password: '1234' },
+      { username: 'admin', password: '12345' },
+      { username: 'admin', password: '123456' },
       { username: 'root', password: 'admin' },
+      { username: 'root', password: 'root' },
       { username: 'root', password: '' },
-      { username: 'admin', password: '' }
+      { username: 'admin', password: '' },
+      { username: 'user', password: 'user' },
+      { username: 'cisco', password: 'cisco' }
     ];
   }
 
@@ -162,17 +168,33 @@ class RouterDetector {
             '/cgi-bin/luci/admin/network/network',
             '/cgi-bin/luci/admin/network/firewall',
             '/cgi-bin/luci/admin/system/system',
+            '/cgi-bin/luci/admin/status/overview',
             // Generic router admin pages
             '/admin/config.asp',
             '/admin/status.asp',
+            '/admin/index.asp',
+            '/admin/network.asp',
+            '/admin/wireless.asp',
             '/cgi-bin/webproc',
             '/cgi-bin/webcm',
+            '/cgi-bin/luci',
             // RouterOS (MikroTik)
             '/rest/system/resource',
             '/rest/ip/address',
+            '/rest/system/identity',
+            // TP-Link
+            '/userRpm/StatusRpm.htm',
+            '/userRpm/WlanSecurityRpm.htm',
+            // Netgear
+            '/BAS_basic.htm',
+            '/WLG_wireless_tab.htm',
+            // D-Link
+            '/cgi-bin/webproc',
+            '/cgi-bin/webcm?getpage=../html/index.html',
             // Generic
             '/status.asp',
             '/index.asp',
+            '/login.asp',
             '/'
           ];
 
@@ -182,18 +204,35 @@ class RouterDetector {
             try {
               const url = `${protocol}://${ip}${endpoint}`;
               
-              // Try with basic auth
-              const response = await axios.get(url, {
+              // Try with basic auth first
+              let response = await axios.get(url, {
                 auth: {
                   username: username || 'admin',
                   password: password || ''
                 },
-                timeout: 2000, // Reduced timeout
-                validateStatus: () => true, // Don't throw on any status
+                timeout: 2000,
+                validateStatus: () => true,
                 headers: {
-                  'User-Agent': 'Mozilla/5.0 (compatible; NetworkAuditor/1.0)'
+                  'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+                  'Accept': 'text/html,application/json,application/xhtml+xml,*/*'
                 }
               });
+
+              // If basic auth fails with 401, try without auth (some routers don't use basic auth)
+              if (response.status === 401 || response.status === 403) {
+                try {
+                  response = await axios.get(url, {
+                    timeout: 2000,
+                    validateStatus: () => true,
+                    headers: {
+                      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+                      'Accept': 'text/html,application/json,application/xhtml+xml,*/*'
+                    }
+                  });
+                } catch (e) {
+                  continue;
+                }
+              }
 
               if (response.status === 200) {
                 // If we get HTML, try to extract useful info
